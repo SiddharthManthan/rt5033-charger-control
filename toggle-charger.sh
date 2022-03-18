@@ -15,8 +15,15 @@ RT5033_CHG_CTRL3=0x04
 RT5033_CHG_CTRL4=0x05
 RT5033_EOC_CTRL=0x07
 
+# Battery Monitoring
+min_battery=40
+max_battery=75
+# Replace BATTERY variable with the actual battery device
+# found under sysfs
+BATTERY="rt5033-battery"
+
 bailout() {
-	echo "Usage: $0 off|on"
+	echo "Usage: $0 off|on|auto"
 	exit 1
 }
 
@@ -40,10 +47,7 @@ i2c_assign_bits() {
 	test "$?" != 0 && exit 1
 }
 
-test "$#" != 1 && bailout
-test "$1" != "on" && test "$1" != "off" && bailout
-
-if test "$1" == "on"; then {
+enable_charger() {
 	# # Disable high Impedance Mode
 	i2c_assign_bits $bus $address $RT5033_CHG_CTRL1 0x02 0x00
 
@@ -51,9 +55,35 @@ if test "$1" == "on"; then {
 	i2c_assign_bits $bus $address $RT5033_CHG_STAT_CTRL 0x01 0x00
 
 	logger "turned charger on"
-} else {
+}
+
+disable_charger() {
 	# Disable Charger
 	i2c_assign_bits $bus $address $RT5033_CHG_STAT_CTRL 0x01 0x01
 
 	logger "turned charger off"
+}
+
+auto() {
+	if [ ! -d /sys/class/power_supply/"$BATTERY" ]; then {
+		bailout;
+	} fi
+
+	CAPACITY="$(cat /sys/class/power_supply/${BATTERY}/capacity)"
+	if [ "$CAPACITY" -lt "$min_battery" ]; then {
+		enable_charger
+	} elif [ "$CAPACITY" -gt "$max_battery" ]; then {
+		disable_charger
+	} fi
+}
+
+test "$#" != 1 && bailout
+test "$1" != "on" && test "$1" != "off" && test "$1" != "auto" && bailout
+
+if test "$1" == "on"; then {
+	enable_charger
+} elif test "$1" == "off"; then {
+	disable_charger
+} elif test "$1" == "auto"; then {
+	auto
 } fi
